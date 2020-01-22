@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>three.js / cannon.js example</title>
+<meta charset="utf-8">
+<style>
+* {
+    margin:0;
+    padding:0
+}
+
+body {
+    overflow:hidden;
+}
+</style>
+</head>
+<body>
+<script src="three.js-master/build/three.js"></script>
+<script src="schteppe-cannon.js-569730f/build/cannon.js"></script>
+<script>
+
+var world, mass, body, shape, timeStep=1/60,
+    camera, scene, renderer, geometry, material, mesh,
+    key_codes, keys_down, player, bodyArr = [], meshArr = [];
+
+let MOVESPEED=30, LOADDISTANCE=5, CULLDISTANCE=7;
+let CHUNKSIZE=8, CHUNKRES=4, terrainMesh={}, terrainBody={};
+let CHUNK = new THREE.PlaneGeometry(CHUNKSIZE, CHUNKSIZE, CHUNKRES, CHUNKRES).rotateX(Math.PI/-2);
+
+init();
+animate();
+
+function initCube(size=[1,1,1], _mass=1) {
+    // cannon creation
+    shape = new CANNON.Box(new CANNON.Vec3(size[0], size[1], size[2]));
+ZZZ
+    body = new CANNON.Body({
+        mass: _mass
+    });
+    body.addShape(shape);
+ZZZ
+    body.angularDamping = 0.2;
+    body.linearDamping = 0.7;
+    bodyArr = bodyArr.concat([body]);
+    world.addBody(bodyArr[bodyArr.length-1]);
+    
+    // three creation
+    geometry = new THREE.BoxGeometry(size[0]*2, size[1]*2, size[2]*2);
+    material = new THREE.MeshBasicMaterial({color: 0xdd88aa, wireframe: false});
+    
+    mesh = new THREE.Mesh( geometry, material );
+    meshArr = meshArr.concat([mesh]);
+    scene.add(meshArr[meshArr.length-1]);
+    
+    return bodyArr[bodyArr.length-1];
+}
+
+function terrainGen(x, z) {
+	return Math.sin(x*.2+z*.25) * 1.5
+}
+
+function initChunk(x, z) {
+    // three creation
+    terrainMesh[[x, z]] = new THREE.Mesh(CHUNK.clone(), new THREE.MeshNormalMaterial({wireframe: true}));	
+    terrainMesh[[x, z]].translateX(x * CHUNKSIZE);
+    terrainMesh[[x, z]].translateZ(z * CHUNKSIZE);
+    
+    var verts = terrainMesh[[x, z]].geometry.vertices;
+    var y_vals = [] // var used in cannon/js's heightfield
+
+    for (v in verts) {
+        terrainMesh[[x, z]].geometry.vertices[v].y = terrainGen(verts[v].x + x * CHUNKSIZE, verts[v].z + z * CHUNKSIZE);
+        y_vals = y_vals.concat(verts[v].y);
+    }
+
+    scene.add(terrainMesh[[x, z]]);
+
+    // cannon creation
+    shape = new CANNON.Heightfield(y_vals, {elementSize: 1});
+    body = new CANNON.Body({
+        type: CANNON.Body.STATIC
+    });
+    body.addShape(shape);
+    terrainBody = body
+    world.addBody(terrainBody[[x, z]]);
+
+}
+
+// function for loading/unloading terrain chunks
+function terrainLOD() {
+    var ppos = player.position;
+    var ppos = new THREE.Vector3(ppos.x, ppos.y, ppos.z);
+    ppos.divideScalar(CHUNKSIZE).floor(); // floor divides the player position so that it fits nicely into the integer based indexing system
+    
+    // iterate over all cached tiles and remove tiles that exceed culling distance
+    for (tile in terrainMesh) {
+        i = {x: +(tile.split(',')[0]), z: +(tile.split(',')[1])}
+        if ((terrainMesh[tile] != undefined) & (!(ppos.x-CULLDISTANCE < i.x) | !(i.x < ppos.x+CULLDISTANCE) | !(ppos.z-CULLDISTANCE < i.z) | !(i.z < ppos.z+CULLDISTANCE))) {
+            scene.remove(terrainMesh[tile]);
+            delete terrainMesh[tile];
+
+        }
+    }
+    
+    // iterate over every tile around the player within render distance and loads them if they are not already in terrainMesh	
+    for (x = -LOADDISTANCE; x <= LOADDISTANCE; x++) {
+        for (z = -LOADDISTANCE; z <= LOADDISTANCE; z++) {
+            if (terrainMesh[[x + ppos.x, z + ppos.z]] == undefined) {
+                initChunk(x + ppos.x, z + ppos.z);
+            }
+        }
+    }
+}
+
+function init() {
+    //// cannon.js init
+    world = new CANNON.World();
+    world.gravity.set(0,0,0);
+    world.broadphase = new CANNON.NaiveBroadphase();
+    world.solver.iterations = 10;
+    
+    //// three.js init
+    scene = new THREE.Scene();
+    
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 100);
+    camera.position.y = 50;
+    // camera.position.x = -30;
+    camera.position.z = 30;
+    // camera.rotateY(Math.PI/-3);
+    camera.rotateX(Math.PI/-3);
+    scene.add(camera);
+    
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    
+    document.body.appendChild(renderer.domElement);
+    
+    
+    //// keyboard input handler
+    // keycodes stored to movement vector
+    // w:83, s:87, 65:a, 68:d
+    key_codes = {
+        87: [0,-1],
+        65: [-1,0],
+        83: [0,1],
+        68: [1,0]
+    }
+    
+    // keys currently pressed
+    keys_down = {}
+
+    // adds key to keys_down when called
+    function keydown(key) {
+        var k = key.keyCode || key.which;
+        keys_down[k] = true;
+    }
+
+    // removes key from keys_down when called
+    function keyup(key) {
+        var k = key.keyCode || key.which;
+        keys_down[k] = false;
+    }
+
+    // key detection listener
+    function startInputController() {
+        document.addEventListener('keydown', keydown);
+        document.addEventListener('keyup', keyup);
+    }
+
+    startInputController();
+
+    //// initiate player
+    player = initCube();
+    // initChunk(0,0);
+
+}
+
+function animate() {
+    // console.log(keys_down);
+
+    requestAnimationFrame( animate );
+    updatePhysics();
+    render();
+
+}
+
+//// Player movement ////
+function move_controller() {
+    var v = [0, 0];
+    for (var n in key_codes) {
+        if (keys_down[n] == true) {
+            v[0] += key_codes[n][0];
+            v[1] += key_codes[n][1];
+        }
+    }
+    if (v[0] || v[1]) {
+        // player.applyLocalImpulse(CANNON.Vec3(v[0] * MOVESPEED, 0, v[1] * MOVESPEED), CANNON.Vec3(0,0,0));
+        player.velocity = new CANNON.Vec3(v[0] * MOVESPEED, 0, v[1] * MOVESPEED)
+    }
+}
+
+function updatePhysics() {
+    // Step the physics world
+    world.step(timeStep);
+    // Move player
+    move_controller();
+
+    terrainLOD();
+
+    // Copy coordinates from Cannon.js to Three.js
+    if (meshArr.length > 0) {
+        for (i=0; i<meshArr.length; i++) {
+            meshArr[i].position.copy(bodyArr[i].position);
+            meshArr[i].quaternion.copy(bodyArr[i].quaternion);
+        }
+    }
+}
+
+function render() {
+
+    renderer.render( scene, camera );
+
+}
+</script>
+</body>
+</html>
