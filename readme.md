@@ -7,6 +7,5 @@ As of typing this, you do have to add cannon.js and three.js to your install, af
 - - -
 ### links
 
-Trello: https://trello.com/b/cZNH0Pun/iron-sand
-
-Discord: https://discordapp.com/invite/7g3Mg5N
+- Trello: https://trello.com/b/cZNH0Pun/iron-sand
+- Discord: https://discordapp.com/invite/7g3Mg5N
